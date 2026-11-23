@@ -53,7 +53,7 @@ jobs:
             --mount "type=bind,source=$PWD,target=/project,readonly" \
             --mount "type=bind,source=$PWD/dist,target=/dist" \
             --env "ARCHIVE_SEARCH_CHANNEL=$channel" --env "BUNDLE=$bundle" fedora:44 bash -euc '
-              dnf -y install flatpak appstream-compose desktop-file-utils python3-gobject-base
+              dnf -y install flatpak flatpak-libs appstream-compose desktop-file-utils python3-gobject-base
               flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
               flatpak --user install -y --no-related --no-deps flathub org.gnome.Platform//50
               ARCHIVE_SEARCH_BIN=/project/target/release/archive-search FLATPAK_ICON_SANDBOX=0 \
