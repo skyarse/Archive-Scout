@@ -1,0 +1,23 @@
+[package]
+name = "archive-search"
+version = "0.1.0"
+edition = "2024"
+description = "Search for files inside ZIP archives on Linux"
+license = "GPL-3.0-only"
+repository = "https://github.com/skyarse/Archive-Scout"
+rust-version = "1.85"
+
+[dependencies]
+anyhow = "1"
+gtk = { package = "gtk4", version = "0.10" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+tempfile = "3"
+unicode-normalization = "0.1"
+unicode-casefold = "0.2"
+zip = { version = "7.3", default-features = false, features = ["deflate", "bzip2", "lzma", "zstd", "deflate64"] }
+
+[profile.dev]
+debug = 0
+
+[profile.release]
+strip = true

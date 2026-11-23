@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Archive Scout
+Comment=Find files by path inside ZIP archives
+Comment[ru]=Поиск файлов по имени и пути внутри ZIP
+Exec=archive-search
+Icon=io.github.skyarse.ArchiveSearch
+Terminal=false
+Categories=Utility;FileTools;
+Keywords=archive;zip;search;
+Keywords[ru]=архив;zip;поиск;
+StartupNotify=true

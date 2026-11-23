@@ -1,0 +1,103 @@
+name: Flatpak Release
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Install GTK 4 development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev
+      - name: Build and test the release binary
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo +stable test --locked --release
+          cargo +stable build --locked --release
+      - name: Build and validate the Flatpak bundle
+        id: package
+        shell: bash
+        run: |
+          version=$(cargo +stable metadata --locked --offline --no-deps --format-version 1 |
+            python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          channel=dev
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            channel=stable
+            test -s "docs/release-notes/$version.md"
+          fi
+          bundle="Archive-Scout-$version-x86_64.flatpak"
+          mkdir -p dist
+          docker run --rm \
+            --mount "type=bind,source=$PWD,target=/project,readonly" \
+            --mount "type=bind,source=$PWD/dist,target=/dist" \
+            --env "ARCHIVE_SEARCH_CHANNEL=$channel" --env "BUNDLE=$bundle" fedora:44 bash -euc '
+              dnf -y install flatpak
+              flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+              flatpak --user install -y --no-related --no-deps flathub org.gnome.Platform//50
+              ARCHIVE_SEARCH_BIN=/project/target/release/archive-search FLATPAK_ICON_SANDBOX=0 \
+                /project/packaging/build-flatpak.sh "/dist/$BUNDLE"
+              flatpak --user install -y --no-deps --bundle "/dist/$BUNDLE"
+              app=io.github.skyarse.ArchiveSearch
+              flatpak --user info --show-ref "$app" | grep -Fx "app/$app/x86_64/$ARCHIVE_SEARCH_CHANNEL"
+              installed=$(flatpak --user info --show-location "$app")
+              cmp "$installed/files/bin/archive-search" /project/target/release/archive-search
+              test -s "$installed/files/share/licenses/$app/LICENSE"
+            '
+          (cd dist && sha256sum "$bundle" > SHA256SUMS)
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+      - name: Save release bundle
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: archive-scout-release
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: archive-scout-release
+          path: dist
+      - name: Publish release with checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          bundle="Archive-Scout-$VERSION-x86_64.flatpak"
+          (cd dist && sha256sum --check SHA256SUMS)
+          notes="$RUNNER_TEMP/archive-scout-release-notes.md"
+          cat "docs/release-notes/$VERSION.md" > "$notes"
+          printf '\nDownload the Flatpak bundle and its SHA-256 checksum below.\n\n[Build and verification](%s/%s/actions/runs/%s)\n' \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$notes"
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Archive Scout $VERSION" \
+            --notes-file "$notes" --latest "dist/$bundle" dist/SHA256SUMS
