@@ -6,9 +6,9 @@ Archive Scout ищет файлы по имени и пути внутри ZIP-�
 
 ## Установка
 
-Проект находится в разработке. Стабильные сборки будут доступны на странице [Releases](https://github.com/skyarse/Archive-Scout/releases). Если у вас уже есть тестовый файл `.flatpak`, откройте его в Discover и нажмите «Установить».
+Скачайте пакет `Archive-Scout-*-x86_64.flatpak` со страницы [Releases](https://github.com/skyarse/Archive-Scout/releases), откройте его в Discover и нажмите «Установить». Для обновления откройте в Discover пакет новой версии.
 
-Целевая платформа тестовой версии — Fedora 44 x86_64, KDE Plasma 6.7 и Wayland. Пакет использует `org.gnome.Platform//50` из Flathub и Flatpak 1.17 или новее.
+Целевая платформа — Fedora 44 x86_64, KDE Plasma 6.7 и Wayland. Пакет использует `org.gnome.Platform//50` из Flathub и Flatpak 1.17 или новее.
 
 ## Как пользоваться
 
