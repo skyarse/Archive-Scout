@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.skyarse.ArchiveSearch</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Archive Scout</name>
+  <summary>Find files inside ZIP archives</summary>
+  <summary xml:lang="ru">Поиск файлов внутри ZIP-архивов</summary>
+  <developer id="io.github.skyarse">
+    <name>skyarse</name>
+  </developer>
+  <description>
+    <p>Find files by name or path inside ZIP archives on local disks and mounted network shares. Archive Scout keeps a local index so you can also search sources that are temporarily offline.</p>
+    <p xml:lang="ru">Ищите файлы по имени или пути внутри ZIP-архивов на локальных дисках и в смонтированных сетевых папках. Локальный индекс позволяет искать по временно отключённым источникам.</p>
+  </description>
+  <launchable type="desktop-id">io.github.skyarse.ArchiveSearch.desktop</launchable>
+  <url type="homepage">https://github.com/skyarse/Archive-Scout</url>
+  <url type="bugtracker">https://github.com/skyarse/Archive-Scout/issues</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-23"/>
+  </releases>
+</component>

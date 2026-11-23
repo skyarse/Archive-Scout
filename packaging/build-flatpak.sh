@@ -24,6 +24,12 @@ esac
 install -Dm755 "$binary" "$build/app/files/bin/archive-search"
 install -Dm644 "$project_dir/packaging/$app.desktop" "$build/app/files/share/applications/$app.desktop"
 install -Dm644 "$project_dir/packaging/$app.svg" "$build/app/files/share/icons/hicolor/scalable/apps/$app.svg"
+install -Dm644 "$project_dir/packaging/$app.metainfo.xml" "$build/app/files/share/metainfo/$app.metainfo.xml"
+appstreamcli validate --no-net "$build/app/files/share/metainfo/$app.metainfo.xml"
+appstreamcli compose --prefix=/ --origin="$app" --components="$app" \
+    --result-root="$build/app/files" --data-dir="$build/app/files/share/app-info/xmls" \
+    --icons-dir="$build/app/files/share/app-info/icons/flatpak" "$build/app/files"
+test -s "$build/app/files/share/app-info/xmls/$app.xml.gz"
 install -Dm644 "$project_dir/LICENSE" "$build/app/files/share/licenses/$app/LICENSE"
 "$builder" build-finish --no-inherit-permissions --command=archive-search \
     --require-version=1.17.0 --socket=wayland --socket=fallback-x11 --share=ipc \

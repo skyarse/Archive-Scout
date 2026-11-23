@@ -45,12 +45,15 @@ jobs:
             test -s "docs/release-notes/$version.md"
           fi
           bundle="Archive-Scout-$version-x86_64.flatpak"
+          if [[ "$channel" == dev ]]; then
+            bundle="Archive-Scout-$version-dev-x86_64.flatpak"
+          fi
           mkdir -p dist
           docker run --rm \
             --mount "type=bind,source=$PWD,target=/project,readonly" \
             --mount "type=bind,source=$PWD/dist,target=/dist" \
             --env "ARCHIVE_SEARCH_CHANNEL=$channel" --env "BUNDLE=$bundle" fedora:44 bash -euc '
-              dnf -y install flatpak
+              dnf -y install flatpak appstream-compose desktop-file-utils python3-gobject-base
               flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
               flatpak --user install -y --no-related --no-deps flathub org.gnome.Platform//50
               ARCHIVE_SEARCH_BIN=/project/target/release/archive-search FLATPAK_ICON_SANDBOX=0 \
@@ -61,14 +64,16 @@ jobs:
               installed=$(flatpak --user info --show-location "$app")
               cmp "$installed/files/bin/archive-search" /project/target/release/archive-search
               test -s "$installed/files/share/licenses/$app/LICENSE"
+              desktop="$installed/export/share/applications/$app.desktop"
+              desktop-file-validate "$desktop"
+              python3 /project/tests/flatpak_bundle.py "/dist/$BUNDLE" "$desktop"
             '
           (cd dist && sha256sum "$bundle" > SHA256SUMS)
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
-      - name: Save release bundle
-        if: github.ref == 'refs/heads/main'
+      - name: Save checked bundle
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: archive-scout-release
+          name: archive-scout-${{ github.ref_name == 'main' && 'release' || 'dev' }}
           path: dist/*
           if-no-files-found: error
 

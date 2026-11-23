@@ -168,7 +168,12 @@ struct App {
     search: gtk::SearchEntry,
     hits: gio::ListStore,
     selection: gtk::SingleSelection,
-    hint: gtk::Label,
+    results_panel: gtk::Stack,
+    result_actions: gtk::Box,
+    empty_title: gtk::Label,
+    empty_detail: gtk::Label,
+    empty_add: gtk::Button,
+    search_error: RefCell<Option<String>>,
     page: gtk::Label,
     previous: gtk::Button,
     next: gtk::Button,
@@ -288,6 +293,7 @@ impl App {
         } else {
             ""
         });
+        self.update_results_panel();
         Ok(())
     }
 
@@ -425,6 +431,10 @@ impl App {
         self.search_due.set(Some(
             Instant::now() + Duration::from_millis(if reset { 180 } else { 0 }),
         ));
+        if reset {
+            self.search_error.borrow_mut().take();
+            self.update_results_panel();
+        }
     }
 
     fn tick_search(&self, now: Instant) {
@@ -442,7 +452,11 @@ impl App {
             if generation == self.generation.get() {
                 match result {
                     Ok((hits, more)) => self.render_hits(generation, hits, more),
-                    Err(error) => self.hint.set_text(&format!("Ошибка поиска: {error}")),
+                    Err(error) => {
+                        self.search_error.replace(Some(error.to_string()));
+                        self.update_results_panel();
+                        self.update_actions();
+                    }
                 }
             }
         }
@@ -469,21 +483,65 @@ impl App {
         self.more.set(more);
         self.previous.set_sensitive(self.offset.get() > 0);
         self.next.set_sensitive(more);
-        self.page.set_visible(count > 0);
         self.page.set_text(&format!(
             "{}–{}{}",
             self.offset.get() + 1,
             self.offset.get() + count as i64,
             if more { " и далее" } else { "" }
         ));
-        self.hint.set_text(if self.search.text().trim().is_empty() {
-            "Введите имя файла или часть пути внутри ZIP"
-        } else if count == 0 {
-            "Совпадений в индексе нет"
-        } else {
-            ""
-        });
+        self.search_error.borrow_mut().take();
+        self.update_results_panel();
         self.update_actions();
+    }
+
+    fn update_results_panel(&self) {
+        let has_sources = !self.source_rows.borrow().is_empty();
+        let query = self.search.text();
+        let query_empty = query.trim().is_empty();
+        let error = self.search_error.borrow();
+        let has_results = has_sources && !query_empty && error.is_none() && self.hits.n_items() > 0;
+        self.results_panel
+            .set_visible_child_name(if has_results { "results" } else { "empty" });
+        self.result_actions.set_visible(has_results);
+        let has_pages = has_results && (self.offset.get() > 0 || self.more.get());
+        self.page.set_visible(has_pages);
+        self.previous.set_visible(has_pages);
+        self.next.set_visible(has_pages);
+        self.empty_add.set_visible(!has_sources);
+
+        if has_results {
+            return;
+        }
+        let (title, detail) = if !has_sources {
+            (
+                "Добавьте папку или диск",
+                "Archive Scout найдёт файлы внутри ZIP-архивов в добавленных источниках.",
+            )
+        } else if let Some(error) = error.as_deref() {
+            ("Не удалось выполнить поиск", error)
+        } else if self.hits.n_items() == 0
+            && (!self.scans.borrow().is_empty() || !self.queue.borrow().is_empty())
+        {
+            (
+                "Индексируем архивы",
+                "Результаты будут появляться по мере сканирования.",
+            )
+        } else if query_empty {
+            (
+                "Найдите файл внутри ZIP",
+                "Введите часть имени или пути. Например, отчёт.pdf или документы/2025.",
+            )
+        } else if self.search_due.get().is_some() || self.generation.get() != self.rendered.get() {
+            ("Ищем в ZIP-архивах…", "")
+        } else {
+            (
+                "Ничего не найдено",
+                "Попробуйте поискать по короткому фрагменту имени или пути.",
+            )
+        };
+        self.empty_title.set_text(title);
+        self.empty_detail.set_text(detail);
+        self.empty_detail.set_visible(!detail.is_empty());
     }
 
     fn selected_hit(&self) -> Option<Hit> {
@@ -499,6 +557,7 @@ impl App {
     fn update_actions(&self) {
         let hit = self.selected_hit();
         let ready = hit.as_ref().is_some_and(|hit| hit.state != OFFLINE)
+            && self.search_error.borrow().is_none()
             && self.rendered.get() == self.generation.get()
             && !self.action_running.get();
         self.reveal.set_sensitive(ready);
@@ -886,8 +945,8 @@ fn create_window(application: &gtk::Application) -> Result<Rc<App>> {
     let window = gtk::ApplicationWindow::builder()
         .application(application)
         .title(TITLE)
-        .default_width(1180)
-        .default_height(720)
+        .default_width(1060)
+        .default_height(640)
         .build();
     let header = gtk::HeaderBar::new();
     header.set_title_widget(Some(&label(TITLE, Some("title"))));
@@ -976,12 +1035,35 @@ fn create_window(application: &gtk::Application) -> Result<Rc<App>> {
         .has_frame(true)
         .child(&view)
         .build();
-    main.append(&scroll);
+    let empty = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    empty.set_halign(gtk::Align::Center);
+    empty.set_valign(gtk::Align::Center);
+    empty.set_margin_start(20);
+    empty.set_margin_end(20);
+    let empty_icon = gtk::Image::from_icon_name("system-search-symbolic");
+    empty_icon.set_pixel_size(40);
+    empty_icon.add_css_class("dim-label");
+    empty.append(&empty_icon);
+    let empty_title = label("", Some("title-2"));
+    empty_title.set_xalign(0.5);
+    empty.append(&empty_title);
+    let empty_detail = label("", Some("dim-label"));
+    empty_detail.set_xalign(0.5);
+    empty_detail.set_justify(gtk::Justification::Center);
+    empty_detail.set_wrap(true);
+    empty_detail.set_max_width_chars(50);
+    empty.append(&empty_detail);
+    let empty_add = button("Добавить источник…", Some("suggested-action"));
+    empty_add.set_halign(gtk::Align::Center);
+    empty_add.set_margin_top(6);
+    empty.append(&empty_add);
 
-    let hint = label(
-        "Введите имя файла или часть пути внутри ZIP",
-        Some("dim-label"),
-    );
+    let results_panel = gtk::Stack::new();
+    results_panel.set_vexpand(true);
+    results_panel.add_named(&empty, Some("empty"));
+    results_panel.add_named(&scroll, Some("results"));
+    main.append(&results_panel);
+
     let scan_status = label("", Some("dim-label"));
     let page = label("", Some("dim-label"));
     page.set_visible(false);
@@ -992,9 +1074,8 @@ fn create_window(application: &gtk::Application) -> Result<Rc<App>> {
     next.set_tooltip_text(Some("Следующие результаты"));
     next.set_sensitive(false);
     let footer = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    hint.set_hexpand(true);
-    hint.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    footer.append(&hint);
+    scan_status.set_hexpand(true);
+    scan_status.set_ellipsize(gtk::pango::EllipsizeMode::End);
     footer.append(&scan_status);
     footer.append(&page);
     footer.append(&previous);
@@ -1032,7 +1113,12 @@ fn create_window(application: &gtk::Application) -> Result<Rc<App>> {
         search,
         hits,
         selection,
-        hint,
+        results_panel,
+        result_actions: actions,
+        empty_title,
+        empty_detail,
+        empty_add,
+        search_error: RefCell::new(None),
         page,
         previous,
         next,
@@ -1060,6 +1146,7 @@ fn create_window(application: &gtk::Application) -> Result<Rc<App>> {
             }
         }
     });
+    app.empty_add.connect_clicked(move |_| add.emit_clicked());
     app.source_list.connect_row_selected({
         let app = Rc::downgrade(&app);
         move |_, row| {
@@ -1240,6 +1327,12 @@ mod tests {
         application.register(gio::Cancellable::NONE)?;
         let app = create_window(&application)?;
         app.next_scan.set(Instant::now() + Duration::from_secs(60));
+        assert_eq!(
+            app.results_panel.visible_child_name().as_deref(),
+            Some("empty")
+        );
+        assert!(app.empty_add.get_visible());
+        assert!(!app.result_actions.get_visible());
 
         let fixture = tempfile::tempdir()?;
         let folder = fixture.path().join("source");
@@ -1252,6 +1345,7 @@ mod tests {
         zip.write_all(b"wayland fixture")?;
         zip.finish()?;
         app.add_path(archive_search::text_path(&folder)?)?;
+        assert_eq!(app.empty_title.text(), "Индексируем архивы");
         let id = app
             .queue
             .borrow_mut()
@@ -1260,8 +1354,18 @@ mod tests {
         let mut archive_db = archive_search::database(&app.database)?;
         let heartbeat = fixture.path().join("heartbeat");
         archive_search::scan(&mut archive_db, id, None, &heartbeat)?;
+        app.source_status()?;
+        assert_eq!(app.empty_title.text(), "Найдите файл внутри ZIP");
+        app.search.set_text("нет такого файла");
+        wait_until(|| app.empty_title.text() == "Ничего не найдено");
+        assert!(!app.result_actions.get_visible());
         app.search.set_text("документы/тест");
         wait_until(|| app.hits.n_items() == 1);
+        assert_eq!(
+            app.results_panel.visible_child_name().as_deref(),
+            Some("results")
+        );
+        assert!(app.result_actions.get_visible());
         app.selection.set_selected(0);
         assert!(app.open.is_sensitive());
         assert!(app.extract.is_sensitive());

@@ -22,7 +22,7 @@ jobs:
       - name: Install GTK 4 development libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev weston
       - name: Set up Rust
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt
@@ -31,3 +31,23 @@ jobs:
         run: cargo fmt --all --check
       - name: Run tests
         run: cargo test --locked
+      - name: Test the window under Wayland
+        run: |
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          export XDG_DATA_HOME="$XDG_RUNTIME_DIR/data"
+          export XDG_CACHE_HOME="$XDG_RUNTIME_DIR/cache"
+          export WAYLAND_DISPLAY=archive-scout-test
+          export GDK_BACKEND=wayland GSK_RENDERER=cairo GTK_A11Y=none
+          weston --backend=headless-backend.so --shell=kiosk-shell.so --no-config \
+            --socket="$WAYLAND_DISPLAY" --idle-time=0 --use-pixman > "$XDG_RUNTIME_DIR/weston.log" 2>&1 &
+          compositor=$!
+          trap 'kill "$compositor" 2>/dev/null || true' EXIT
+          for attempt in {1..50}; do
+            if [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]]; then break; fi
+            sleep 0.1
+          done
+          if [[ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]]; then
+            cat "$XDG_RUNTIME_DIR/weston.log"
+            exit 1
+          fi
+          cargo test --locked --bin archive-search wayland_results_and_offline_actions -- --ignored
